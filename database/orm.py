@@ -1,90 +1,78 @@
 import logging
 from typing import Any
-
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
-
-from database.datatypes import UserType
-from database.db_config import SessionLocal
+from database.db_config import SessionLocal, Base
 from database.models import User
 
+object_type_hint = User
+objects_type_hints = list[User] | list
 
-class UserDB:
 
-    @staticmethod
-    def create(**user_data: dict[str | UserType]):
+class ORMBase:
+
+    def __init__(self, model: Base):
+        self.model = model
+
+    def create(self, **object_data: dict):
         with SessionLocal() as db:
             try:
-                user_data = User(**user_data)
-                db.add(user_data)
+                object_data = self.model(**object_data)
+                db.add(object_data)
                 db.commit()
 
-            except IntegrityError as e:
+            except IntegrityError:
                 logging.info(f"Already added to the database.")
 
             except Exception as e:
                 logging.error(f"An error occurred: {e}")
 
-    @staticmethod
-    def get(user_id: int) -> User:
+    def update(self, id: int, **updated_data) -> object_type_hint:
         with SessionLocal() as db:
             try:
-                user = db.query(User).get(user_id)
-                return user
+                object = db.query(self.model).get(id)
 
-            except Exception as e:
-                logging.error(f"An error occurred: {e}")
-
-    @staticmethod
-    def update(user_id: int, **updated_data) -> User:
-        with SessionLocal() as db:
-            try:
-                user = db.query(User).get(user_id)
-                if not user:
-                    raise ValueError(f"User with ID {user_id} not found")
+                if not object:
+                    raise ValueError(f"User with ID {id} not found")
 
                 # Update user fields selectively using object attributes
                 for key, value in updated_data.items():
-                    if hasattr(user, key):  # Check if attribute exists
-                        setattr(user, key, value)
+                    if hasattr(object, key):  # Check if attribute exists
+                        setattr(object, key, value)
 
                 db.commit()
-                return user
+                return object
             except Exception as e:
                 logging.error(f"An error occurred while updating user: {e}")
                 raise  # Re-raise the exception for handling outside the function
 
-    @staticmethod
-    def delete(user_id: int) -> Any:
+    def delete(self, id: int) -> Any:
         with SessionLocal() as db:
             try:
-                user = db.query(User).get(user_id)
+                object = db.query(self.model).get(id)
 
-                if user is not None:
-                    db.delete(user)
+                if object is not None:
+                    db.delete(object)
                     db.commit()
 
             except Exception as e:
                 logging.error(f"An error occurred: {e}")
 
-    @staticmethod
-    def all() -> list | list[User]:
+    def all(self) -> objects_type_hints:
         with SessionLocal() as db:
-            return db.query(User).all()
+            return db.query(self.model).all()
 
-    @staticmethod
-    def filter(**filters) -> list[User] | list:
+    def filter(self, **filters) -> objects_type_hints:
         with SessionLocal() as db:
             try:
-                query = db.query(User)
+                query = db.query(self.model)
 
                 # Build dynamic query based on filter keywords
                 conditions = []
                 for key, value in filters.items():
-                    if hasattr(User, key):  # Check for valid filter field
-                        conditions.append(getattr(User, key) == value)  # Basic comparison
+                    if hasattr(self.model, key):  # Check for valid filter field
+                        conditions.append(getattr(self.model, key) == value)  # Basic comparison
 
-                # Combine conditions with OR and AND logic based on a separate parameter
 
                 if "logic" in filters and filters["logic"].lower() == "or":
                     query = query.filter(or_(*conditions))  # Combine filters with OR (default)
@@ -96,7 +84,9 @@ class UserDB:
                 logging.error(f"An error occurred while filtering users: {e}")
                 raise  # Re-raise the exception for handling outside the function
 
-    @staticmethod
-    def count() -> list | list[User]:
+    def count(self) -> int:
         with SessionLocal() as db:
-            return db.query(User).count()
+            return db.query(self.model).count()
+
+
+UserDB = ORMBase(User)
