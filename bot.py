@@ -1,30 +1,32 @@
 import asyncio
 import logging
-from typing import Annotated
-
 import betterlogging as bl
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
-from sqlalchemy.orm import Session
-
-from database.db_config import SessionLocal, Base, engine
+from aiogram.fsm.storage.redis import DefaultKeyBuilder
+from database.db_config import Base, engine
 from tgbot.config import load_config, Config
 from tgbot.handlers import routers_list
 from tgbot.middlewares.config import ConfigMiddleware
-from tgbot.services import broadcaster
+from tgbot.services.startup import on_startup_notify, set_default_commands
 
 
-async def on_startup(bot: Bot, admin_ids: list[int]):
-    await broadcaster.broadcast(bot, admin_ids, "Bot is started")
-    # await bot.set_webhook(webhook_url='https://slidemakerdemo.pythonanywhere.com/webhook')
-
+config = load_config(".env")
 
 def register_global_middlewares(dp: Dispatcher, config: Config, session_pool=None):
     middleware_types = [
         ConfigMiddleware(config),
     ]
+
+    if config.tg_bot.use_redis:
+        from tgbot.middlewares.throttle_redis import ThrottlingMiddleware
+        middleware_types.append(ThrottlingMiddleware(get_storage(use_redis=True).redis))
+
+    else:
+        from tgbot.middlewares.throttle import ThrottlingMiddleware
+        middleware_types.append(ThrottlingMiddleware(get_storage(use_sqlite=True), ))
+
 
     for middleware_type in middleware_types:
         dp.message.outer_middleware(middleware_type)
@@ -57,13 +59,20 @@ def setup_logging():
     logger.info("Starting bot")
 
 
-def get_storage(use_sqlite: bool = False):
+def get_storage(use_sqlite: bool = False, use_redis: bool = False):
 
     if use_sqlite:
         from aiogram_sqlite_storage.sqlitestore import SQLStorage
         my_storage = SQLStorage('storage.db', serializing_method='pickle')
+        return my_storage
 
-        pass
+    elif use_redis:
+        from aiogram.fsm.storage.redis import RedisStorage
+        return RedisStorage.from_url(
+            config.REDIS_URL,
+            key_builder=DefaultKeyBuilder(with_bot_id=True, with_destiny=True),
+        )
+
     else:
         return MemoryStorage()
 
@@ -74,7 +83,6 @@ Base.metadata.create_all(bind=engine)
 async def main():
     setup_logging()
 
-    config = load_config(".env")
     storage = get_storage(use_sqlite=True)
 
     # session = AiohttpSession(proxy="http://proxy.server:3128")
@@ -86,7 +94,8 @@ async def main():
 
     register_global_middlewares(dp, config)
 
-    await on_startup(bot, config.tg_bot.admin_ids)
+    await on_startup_notify(bot, config.tg_bot.admin_ids[0])
+    await set_default_commands(bot)
     await dp.start_polling(bot)
 
 

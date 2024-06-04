@@ -5,14 +5,14 @@ from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 
 from database.datatypes import UserType
-from database.db_config import SessionLocal, get_db
+from database.db_config import SessionLocal
 from database.models import User
 
 
 class UserDB:
 
     @staticmethod
-    def create(user_data: UserType):
+    def create(**user_data: dict[str | UserType]):
         with SessionLocal() as db:
             try:
                 user_data = User(**user_data)
@@ -72,7 +72,6 @@ class UserDB:
         with SessionLocal() as db:
             return db.query(User).all()
 
-
     @staticmethod
     def filter(**filters) -> list[User] | list:
         with SessionLocal() as db:
@@ -96,3 +95,8 @@ class UserDB:
             except Exception as e:
                 logging.error(f"An error occurred while filtering users: {e}")
                 raise  # Re-raise the exception for handling outside the function
+
+    @staticmethod
+    def count() -> list | list[User]:
+        with SessionLocal() as db:
+            return db.query(User).count()

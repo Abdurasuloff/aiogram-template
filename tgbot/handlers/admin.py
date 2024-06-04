@@ -1,8 +1,9 @@
+import asyncio
+
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
-from database.models import User
 from database.orm import UserDB
 from tgbot.filters.admin import AdminFilter
 from tgbot.config import load_config
@@ -21,24 +22,6 @@ admin_router.message.filter(AdminFilter())
 @admin_router.message(CommandStart())
 async def admin_start(message: Message):
     await message.reply(f"Assalomu alaykum, {message.from_user.full_name}", reply_markup=admin_menu)
-
-    user_info = dict(
-        id=message.from_user.id,
-        name=message.from_user.full_name,
-        username=message.from_user.full_name,
-        language=message.from_user.language_code,
-    )
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ======================================ADS=========================================================
@@ -72,11 +55,11 @@ async def send_the_ad(call: CallbackQuery, state: FSMContext, callback_data: Con
         data = await state.get_data()
         message_id = data['message_id']
         chat_id = data['chat_id']
-        users = await User.all()
+        users = UserDB.all()
 
         # markup = ad_keyboard(name="🖇 Bog'lanish", username=config.tg_bot.ad_username)
-        await send_copy_broadcast(call.bot, users, message_id, chat_id, reply_markup=None)
         await call.message.edit_text("✅ Jarayon boshlandi tugagandan so'ng sizni ogohlantiramiz.", reply_markup=None)
+        asyncio.create_task(send_copy_broadcast(call.bot, users, message_id, chat_id, reply_markup=None))
 
     else:
         await call.message.edit_text("❌ Xabarni yuborish bekor qilindi.", reply_markup=None)
@@ -87,10 +70,9 @@ async def send_the_ad(call: CallbackQuery, state: FSMContext, callback_data: Con
 # Show stats
 @admin_router.message(F.text.contains("📊 Statistika"))
 async def stats(message: Message):
-    stats = await User.stats()
+    count = UserDB.count()
     # await message.delete()
     text = "📊Statistika"
-    text += f"\n\n<b>👤Foydalanuvchilar soni :</b>  {stats['users']}"
-    text += f"\n<b>🖥Yaratilgan Taqdimotlar:</b> {stats['presentations']} "
+    text += f"\n\n<b>👤Foydalanuvchilar soni :</b>  {count}"
 
     await message.answer(text)
